@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Terraform state management</title>
+    <meta name="description" content="Terraform state management" />
+    <meta name="author" content="Daily Dev Tips" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="/main.css" rel="stylesheet">
+    <script src="https://unpkg.com/alpinejs" defer></script>
+    <style>
+      .version-row:hover .version-switch {
+        display: inline-block !important;
+      }
+      @keyframes progress-indeterminate {
+        0% {
+          width: 30%;
+          left: -40%;
+        }
+        60% {
+          left: 100%;
+          width: 100%;
+        }
+        to {
+          left: 100%;
+          width: 0;
+        }
+      }
+      .progressbar {
+        transition: width 0.5s ease;
+      }
+      .indeterminate .progressbar {
+        animation: progress-indeterminate 1s ease infinite;
+      }
+    </style>
+    <script>
+      function strToHexBg(str) {
+        var hash = 0;
+        if (str.length === 0) return hash;
+        for (var i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            hash = hash & hash;
+        }
+        var color = '#';
+        for (var i = 0; i < 3; i++) {
+            var value = (hash >> (i * 8)) & 255;
+            color += ('00' + value.toString(16)).substr(-2);
+        }
+        return `background-color: ${color};`;
+      }
+    </script>
+  </head>
+  <body>
+      <div class="relative h-screen flex overflow-hidden bg-white"
+        @reload="
+            if (currentState) {
+              fetch(currentState + '?list=true', {headers: {'accept': 'application/json'}})
+                .then(x => x.json())
+                .then(data => { 
+                  currentStateData = data
+                  loading = false
+                })
+            } else {
+              loading = false
+            }
+          "
+        x-data="{
+          loading: true,
+          currentState: window.location.pathname !== '/' ? window.location.pathname : undefined,
+          states: [],
+          currentStateData: {lock: {}, versions: []}
+        }"
+        x-init="
+          $watch('currentState', (value) => {
+            //window.location.pathname = currentState
+            const url = new URL(window.location)
+            url.pathname = currentState
+            window.history.pushState({}, '', url);
+          });
+
+          fetch('/?list=true', {headers: {'accept': 'application/json'}})
+            .then(x => x.json())
+            .then(data => {
+              states = data
+
+              if (states.length && !currentState) {
+                currentState = states[0]
+              }
+              $nextTick(() => {
+                $dispatch('reload')
+              });
+            })
+        "
+      >
+        <!-- Static sidebar for desktop -->
+        <div class="flex">
+          <div class="flex flex-col w-80 border-r border-gray-200 pt-5 pb-4 bg-gray-100">
+            <div class="flex items-center flex-shrink-0 px-6">
+              <img class="h-15 w-auto" src="https://www.datocms-assets.com/2885/1620155113-brandhcterraformprimaryattributedcolor.svg" alt="Terraform">
+            </div>
+            <!-- Sidebar component, swap this element with another sidebar if you like -->
+            <div class="h-0 flex-1 flex flex-col">
+              <!-- Navigation -->
+              <nav class="px-3 mt-6">
+                <div class="">
+                  <!-- Secondary navigation -->
+                  <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" id="desktop-teams-headline">
+                    Terraform states
+                  </h3>
+
+                  <div class="mt-1 space-y-1" role="group" aria-labelledby="desktop-teams-headline">
+                    <template x-for="(state, index) in states" :key="index" hidden>
+                      <a :href="currentState" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:text-gray-900 hover:bg-gray-50"
+                        :class="currentState === state && 'bg-indigo-200 hover:bg-indigo-200'"
+                        @click.prevent="loading = true; currentState = state; $dispatch('reload');"
+                      >
+                        <span class="w-2.5 h-2.5 mr-4 rounded-full" :style="strToHexBg(state)" aria-hidden="true"></span>
+                        <span x-text="state" class=""></span>
+                      </a>
+                    </template>
+                  </div>
+                </div>
+              </nav>
+            </div>
+          </div>
+        </div>
+        <!-- Main column -->
+        <div class="flex flex-col w-0 flex-1 overflow-hidden">
+          <template x-if="currentStateData.lock && currentStateData.lock.ID">
+            <div class="rounded-md bg-red-50 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <!-- Heroicon name: solid/check-circle -->
+                  <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <h3 class="text-sm font-medium text-red-800">
+                    Terraform state is locked
+                  </h3>
+                  <div class="mt-2 text-sm text-red-700">
+                    <p>
+                      "<span x-text="currentState"></span>" was locked by <strong x-text="currentStateData.lock.Who"></strong> at <span x-text="new Date(currentStateData.lock.Created).toLocaleDateString() + ' ' + new Date(currentStateData.lock.Created).toLocaleTimeString()"></span> (<span x-text="currentStateData.lock.Operation"></span>)
+                    </p>
+                  </div>
+                  <div class="mt-4">
+                    <div class="-mx-2 -my-1.5 flex">
+                      <button 
+                        type="button" 
+                        class="bg-red-100 px-2 py-1.5 rounded-md text-sm font-medium text-red-800 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600"
+                        x-text="currentStateData.lock.Operation === 'OperationTypeManual' ? 'Unlock state' : 'Force unlock state'"
+                        @click="
+                          if (confirm('Really UNLOCK this state?')) {
+                            loading = true
+                            fetch(currentState, {method: 'UNLOCK'})
+                              .then(res => {
+                                if (!res.ok) {
+                                  throw Error(res.statusText);
+                                }
+                                $dispatch('reload')
+                              })
+                              .catch(e => {
+                                alert(e.toString())
+                                loading = false
+                              })
+                          }
+                        "
+                      >
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="currentStateData.lock && !currentStateData.lock.ID">
+            <div class="rounded-md bg-blue-50 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <!-- Heroicon name: solid/check-circle -->
+                  <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <h3 class="text-sm font-medium text-blue-800">
+                    Terraform state is chilling
+                  </h3>
+                  <div class="mt-2 text-sm text-blue-700">
+                    <p>
+                      "<span x-text="currentState"></span>" can be manually locked to temporarily prevent changes by others. You can also switch between versions while manually locked.
+                    </p>
+                  </div>
+                  <div class="mt-4">
+                    <div class="-mx-2 -my-1.5 flex">
+                      <button 
+                        type="button" 
+                        class="bg-blue-100 px-2 py-1.5 rounded-md text-sm font-medium text-blue-800 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-50 focus:ring-blue-600"
+                        @click="
+                          if (confirm('Really LOCK this state?')) {
+                            loading = true
+
+                            fetch(currentState+'?operation=OperationTypeManual', {method: 'LOCK', body: '{}'})
+                              .then(res => {
+                                if (!res.ok) {
+                                  throw Error(res.statusText);
+                                }
+                                $dispatch('reload')
+                              })
+                              .catch(e => {
+                                alert(e.toString())
+                                loading = false
+                              })
+                          }
+                        "
+                      >
+                        Lock state
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="loading">
+            <div 
+              class="w-auto bg-gray-200 h-0.5 relative overflow-hidden indeterminate"
+            >
+              <div
+                class="h-full progressbar bg-indigo-800 absolute top-0 indeterminate"
+                role="progressbar"
+                style="width: 0%"
+                aria-valuenow="0"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <span class="flex items-center h-full">
+                  <slot></slot>
+                </span>
+              </div>
+            </div>
+          </template>
+          <template x-if="!loading">
+            <div 
+              class="w-auto bg-gray-200 h-0.5 relative overflow-hidden indeterminate"
+            >
+          </template>
+
+          <div class="block">
+            <div class="align-middle inline-block min-w-full border-b border-gray-200">
+              <table class="min-w-full">
+                <thead>
+                  <tr class=" border-gray-200">
+                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Version ID
+                    </th>
+                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Created by
+                    </th>
+                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Created at
+                    </th>
+                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Size
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-100">
+                  <template x-for="version in currentStateData.versions">
+                    <tr class="hover:bg-gray-100 version-row">
+                      <td class="px-6 py-3 max-w-0 w-full whitespace-nowrap text-sm font-medium text-gray-900">
+                        <div class="flex items-center space-x-3 lg:pl-2">
+                            <span x-text="version.id"></span>
+                            <template x-if="version.id === currentStateData.current">
+                              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                Current
+                              </span>
+                            </template>
+                            <template x-if="version.id != currentStateData.current && currentStateData.lock && currentStateData.lock.Operation === 'OperationTypeManual'">
+                              <a 
+                                href="#"
+                                class="items-center text-xs font-medium text-blue-800 hidden version-switch"
+                                @click="
+                                  loading = true
+                                  fetch(currentState, {method: 'PATCH', body: version.id})
+                                    .then(res => {
+                                      if (!res.ok) {
+                                        throw Error(res.statusText);
+                                      }
+                                      $dispatch('reload')
+                                    })
+                                    .catch(e => {
+                                      alert(e.toString())
+                                      loading = false
+                                    })
+                                "
+                              >
+                                Switch to this version
+                              </a>
+                            </template>
+                        </div>
+                      </td>
+                      <td x-text="version.created_by" class="table-cell px-6 py-3 whitespace-nowrap text-sm text-gray-500 text-right"></td>
+                      <td x-text="new Date(version.created_at).toLocaleDateString() + ' ' + new Date(version.created_at).toLocaleTimeString()" class="table-cell px-6 py-3 whitespace-nowrap text-sm text-gray-500 text-right"></td>
+                      <td x-text="version.size" class="table-cell px-6 py-3 whitespace-nowrap text-sm text-gray-500 text-right"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          </main>
+        </div>
+      </div>
+  </body>
+</html>
