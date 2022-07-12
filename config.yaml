@@ -1,0 +1,69 @@
+general: 
+  account_id: aa42210e0c67be181cdaba459a424173
+  zone_name: eidam.cf
+  subdomain: terraform-state # => terraform-state.eidam.cf
+
+# Configure who can access and get JWT through Cloudflare Access
+# Policy still needs to be configured in order to give access to specific path
+access:
+  session_duration: 48h
+  include:
+    email_domains:
+      - eidam.cf
+    emails:
+      - hello@eidam.cf
+    everyone: true
+
+# JWT issuers that can be used and referenced by their id in path policies below
+issuers: 
+  - id: access
+    iss: https://eidamd.cloudflareaccess.com # replace with your Cloudflare for Teams domain
+    jwks_uri: https://eidamd.cloudflareaccess.com/cdn-cgi/access/certs # explicitly set as Access does not support auto-discovery (/.well-known/openid-configuration)
+    ui:
+      name: Cloudflare Access
+      actor_claim: email
+  - id: gitlab
+    iss: gitlab.com # replace in case of self-hosted GitLab
+    ui:
+      name: GitLab CI/CD
+      actor_claim: user_login
+      job_url: https://gitlab.com/:project_path/-/jobs/:job_id # :project_path and :job_id are jwt claims
+  - id: github
+    iss: https://token.actions.githubusercontent.com
+    ui:
+      name: GitHub Actions
+      actor_claim: actor
+      job_url: https://github.com/:repository/actions/runs/:run_id # :project_path and :job_id are jwt claims
+  - id: custom
+    iss: https://workers-identity.eidam.cf
+    ui:
+      name: Custom IdP
+
+# Policies for each path
+# JWT claims can be used as named parameters in the path
+policies:
+  - path: /*
+    jwts:
+      - issuer_id: access
+        scope: list # list state versions only, can NOT read
+        claims: 
+          email: eidam@example.com
+  - path: /user/:email/*
+    jwts:
+      - issuer_id: access
+        scope: write # full access
+  - path: /gitlab/:namespace_id/:project_id/*
+    jwts:
+      - issuer_id: gitlab
+        scope: write
+      - issuer_id: gitlab # some extra project need read only access to all projects
+        ignore_url_params_claims: true # do not enfore url param claims
+        scope: read # set read only access (list or get state)
+        claims:
+          project_id: 123
+      - issuer_id: access
+        ignore_url_params_claims: true
+        scope: list
+        claims: 
+          group: 
+            - some-group # https://developers.cloudflare.com/cloudflare-one/identity/users/validating-json#support-additional-oidc-claims-with-your-jwt 

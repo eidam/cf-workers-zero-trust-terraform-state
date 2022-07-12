@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full bg-gray-100">
   <head>
     <meta charset="utf-8" />
     <title>Terraform state management</title>
     <meta name="description" content="Terraform state management" />
-    <meta name="author" content="Daily Dev Tips" />
+    <meta name="author" content="Adam Janiš" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="/main.css" rel="stylesheet">
     <script src="https://unpkg.com/alpinejs" defer></script>
@@ -48,272 +48,398 @@
         }
         return `background-color: ${color};`;
       }
+      String.prototype.mapReplace = function(map) {
+          var regex = [];
+          for(var key in map)
+              regex.push(`:${key}`.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"));
+          return this.replace(new RegExp(regex.join('|'),"g"), function(word){
+              return map[word.substring(1)];
+          });
+      };
     </script>
   </head>
-  <body>
-      <div class="relative h-screen flex overflow-hidden bg-white"
-        @reload="
-            if (currentState) {
-              fetch(currentState + '?list=true', {headers: {'accept': 'application/json'}})
-                .then(x => x.json())
-                .then(data => { 
-                  currentStateData = data
-                  loading = false
-                })
-            } else {
-              loading = false
-            }
-          "
-        x-data="{
-          loading: true,
-          currentState: window.location.pathname !== '/' ? window.location.pathname : undefined,
-          states: [],
-          currentStateData: {lock: {}, versions: []}
-        }"
-        x-init="
-          $watch('currentState', (value) => {
-            //window.location.pathname = currentState
-            const url = new URL(window.location)
-            url.pathname = currentState
-            window.history.pushState({}, '', url);
-          });
-
-          fetch('/?list=true', {headers: {'accept': 'application/json'}})
-            .then(x => x.json())
-            .then(data => {
-              states = data
-
-              if (states.length && !currentState) {
-                currentState = states[0]
-              }
-              $nextTick(() => {
-                $dispatch('reload')
-              });
-            })
+  <body class="h-full">
+    <div 
+      @reload="
+          if (currentState) {
+            fetch(currentState + '?list=true', {headers: {'accept': 'application/json'}})
+              .then(res => res.json())
+              .then(data => { 
+                currentStateData = data
+                loading = false
+              })
+          } else {
+            loading = false
+          }
         "
-      >
-        <!-- Static sidebar for desktop -->
-        <div class="flex">
-          <div class="flex flex-col w-80 border-r border-gray-200 pt-5 pb-4 bg-gray-100">
-            <div class="flex items-center flex-shrink-0 px-6">
-              <img class="h-15 w-auto" src="https://www.datocms-assets.com/2885/1620155113-brandhcterraformprimaryattributedcolor.svg" alt="Terraform">
-            </div>
-            <!-- Sidebar component, swap this element with another sidebar if you like -->
-            <div class="h-0 flex-1 flex flex-col">
-              <!-- Navigation -->
-              <nav class="px-3 mt-6">
-                <div class="">
-                  <!-- Secondary navigation -->
-                  <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" id="desktop-teams-headline">
-                    Terraform states
-                  </h3>
+      x-data="{
+        isSidebarOpen: false,
+        loading: true,
+        currentState: window.location.pathname !== '/' ? window.location.pathname : undefined,
+        states: [],
+        currentStateData: {lock: {}, versions: [], issuers: []}
+      }"
+      x-init="
+        $watch('currentState', (value) => {
+          //window.location.pathname = currentState
+          const url = new URL(window.location)
+          url.pathname = currentState
+          window.history.pushState({}, '', url);
+        });
 
-                  <div class="mt-1 space-y-1" role="group" aria-labelledby="desktop-teams-headline">
-                    <template x-for="(state, index) in states" :key="index" hidden>
-                      <a :href="currentState" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:text-gray-900 hover:bg-gray-50"
-                        :class="currentState === state && 'bg-indigo-200 hover:bg-indigo-200'"
-                        @click.prevent="loading = true; currentState = state; $dispatch('reload');"
-                      >
-                        <span class="w-2.5 h-2.5 mr-4 rounded-full" :style="strToHexBg(state)" aria-hidden="true"></span>
-                        <span x-text="state" class=""></span>
-                      </a>
-                    </template>
-                  </div>
-                </div>
-              </nav>
+        fetch('/?list=true', {headers: {'accept': 'application/json'}})
+          .then(x => x.json())
+          .then(data => {
+            states = data
+
+            if (states.length && !currentState) {
+              currentState = states[0]
+            }
+            $nextTick(() => {
+              $dispatch('reload')
+            });
+          })
+      "  
+    >
+      <!-- Off-canvas menu for mobile, show/hide based on off-canvas menu state. -->
+      <div x-show="isSidebarOpen" class="fixed inset-0 flex z-40 md:hidden" role="dialog" aria-modal="true">
+        <!--
+          Off-canvas menu overlay, show/hide based on off-canvas menu state.
+    
+          Entering: "transition-opacity ease-linear duration-300"
+            From: "opacity-0"
+            To: "opacity-100"
+          Leaving: "transition-opacity ease-linear duration-300"
+            From: "opacity-100"
+            To: "opacity-0"
+        -->
+        <div class="fixed inset-0 bg-gray-600 bg-opacity-75" aria-hidden="true"
+          x-show="isSidebarOpen"
+          x-transition:enter="transition-opacity ease-linear duration-300"
+          x-transition:enter-start="opacity-0"
+          x-transition:enter-end="opacity-100"
+          x-transition:leave="transition-opacity ease-linear duration-300"
+          x-transition:leave-start="opacity-100"
+          x-transition:leave-end="opacity-0"
+        ></div>
+    
+        <!--
+          Off-canvas menu, show/hide based on off-canvas menu state.
+    
+          Entering: "transition ease-in-out duration-300 transform"
+            From: "-translate-x-full"
+            To: "translate-x-0"
+          Leaving: "transition ease-in-out duration-300 transform"
+            From: "translate-x-0"
+            To: "-translate-x-full"
+        -->
+        <div class="relative flex-1 flex flex-col max-w-xs w-full bg-gray-800"
+          x-show="isSidebarOpen"
+          x-transition:enter="transition ease-in-out duration-300 transform"
+          x-transition:enter-start="-translate-x-full"
+          x-transition:enter-end="translate-x-0"
+          x-transition:leave="transition ease-in-out duration-300 transform"
+          x-transition:leave-start="translate-x-0"
+          x-transition:leave-end="-translate-x-full"
+        >
+          <!--
+            Close button, show/hide based on off-canvas menu state.
+    
+            Entering: "ease-in-out duration-300"
+              From: "opacity-0"
+              To: "opacity-100"
+            Leaving: "ease-in-out duration-300"
+              From: "opacity-100"
+              To: "opacity-0"
+          -->
+          <div class="absolute top-0 right-0 -mr-12 pt-2"
+            x-show="isSidebarOpen"
+            x-transition:enter="ease-in-out duration-300"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            x-transition:leave="ease-in-out duration-300"
+            x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"
+          >
+            <button @click="isSidebarOpen = !isSidebarOpen" type="button" class="ml-1 flex items-center justify-center h-10 w-10 rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white">
+              <span class="sr-only">Close sidebar</span>
+              <!-- Heroicon name: outline/x -->
+              <svg class="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+    
+          <div class="flex-1 h-0 pt-5 pb-4 overflow-y-auto">
+            <div class="flex-shrink-0 flex items-center px-4">
+              <div class="text-white font-medium text-xl">Terraform states</div>
             </div>
+            <nav class="mt-5 px-2 space-y-1">
+              
+              <!-- Current: "bg-gray-900 text-white", Default: "text-gray-300 hover:bg-gray-700 hover:text-white" -->
+              <template x-for="(state, index) in states" :key="index" hidden>
+                <a :href="currentState" class="text-gray-300 hover:bg-gray-700 hover:text-white group flex items-center px-2 py-2 text-base font-medium rounded-md"
+                  :class="currentState === state && 'bg-gray-900 text-white hover:none'"
+                  @click.prevent="loading = true; currentState = state; $dispatch('reload');"
+                >
+                  <span x-text="state" class="truncate"></span>
+                </a>
+              </template>
+              
+            </nav>
           </div>
         </div>
-        <!-- Main column -->
-        <div class="flex flex-col w-0 flex-1 overflow-hidden">
-          <template x-if="currentStateData.lock && currentStateData.lock.ID">
-            <div class="rounded-md bg-red-50 p-4">
-              <div class="flex">
-                <div class="flex-shrink-0">
-                  <!-- Heroicon name: solid/check-circle -->
-                  <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                  </svg>
-                </div>
-                <div class="ml-3">
-                  <h3 class="text-sm font-medium text-red-800">
-                    Terraform state is locked
-                  </h3>
-                  <div class="mt-2 text-sm text-red-700">
-                    <p>
-                      "<span x-text="currentState"></span>" was locked by <strong x-text="currentStateData.lock.Who"></strong> at <span x-text="new Date(currentStateData.lock.Created).toLocaleDateString() + ' ' + new Date(currentStateData.lock.Created).toLocaleTimeString()"></span> (<span x-text="currentStateData.lock.Operation"></span>)
-                    </p>
-                  </div>
-                  <div class="mt-4">
-                    <div class="-mx-2 -my-1.5 flex">
-                      <button 
-                        type="button" 
-                        class="bg-red-100 px-2 py-1.5 rounded-md text-sm font-medium text-red-800 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600"
-                        x-text="currentStateData.lock.Operation === 'OperationTypeManual' ? 'Unlock state' : 'Force unlock state'"
-                        @click="
-                          if (confirm('Really UNLOCK this state?')) {
-                            loading = true
-                            fetch(currentState, {method: 'UNLOCK'})
-                              .then(res => {
-                                if (!res.ok) {
-                                  throw Error(res.statusText);
-                                }
-                                $dispatch('reload')
-                              })
-                              .catch(e => {
-                                alert(e.toString())
-                                loading = false
-                              })
-                          }
-                        "
-                      >
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <template x-if="currentStateData.lock && !currentStateData.lock.ID">
-            <div class="rounded-md bg-blue-50 p-4">
-              <div class="flex">
-                <div class="flex-shrink-0">
-                  <!-- Heroicon name: solid/check-circle -->
-                  <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-                  </svg>
-                </div>
-                <div class="ml-3">
-                  <h3 class="text-sm font-medium text-blue-800">
-                    Terraform state is chilling
-                  </h3>
-                  <div class="mt-2 text-sm text-blue-700">
-                    <p>
-                      "<span x-text="currentState"></span>" can be manually locked to temporarily prevent changes by others. You can also switch between versions while manually locked.
-                    </p>
-                  </div>
-                  <div class="mt-4">
-                    <div class="-mx-2 -my-1.5 flex">
-                      <button 
-                        type="button" 
-                        class="bg-blue-100 px-2 py-1.5 rounded-md text-sm font-medium text-blue-800 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-50 focus:ring-blue-600"
-                        @click="
-                          if (confirm('Really LOCK this state?')) {
-                            loading = true
-
-                            fetch(currentState+'?operation=OperationTypeManual', {method: 'LOCK', body: '{}'})
-                              .then(res => {
-                                if (!res.ok) {
-                                  throw Error(res.statusText);
-                                }
-                                $dispatch('reload')
-                              })
-                              .catch(e => {
-                                alert(e.toString())
-                                loading = false
-                              })
-                          }
-                        "
-                      >
-                        Lock state
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <template x-if="loading">
-            <div 
-              class="w-auto bg-gray-200 h-0.5 relative overflow-hidden indeterminate"
-            >
-              <div
-                class="h-full progressbar bg-indigo-800 absolute top-0 indeterminate"
-                role="progressbar"
-                style="width: 0%"
-                aria-valuenow="0"
-                aria-valuemin="0"
-                aria-valuemax="100"
-              >
-                <span class="flex items-center h-full">
-                  <slot></slot>
-                </span>
-              </div>
-            </div>
-          </template>
-          <template x-if="!loading">
-            <div 
-              class="w-auto bg-gray-200 h-0.5 relative overflow-hidden indeterminate"
-            >
-          </template>
-
-          <div class="block">
-            <div class="align-middle inline-block min-w-full border-b border-gray-200">
-              <table class="min-w-full">
-                <thead>
-                  <tr class=" border-gray-200">
-                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Version ID
-                    </th>
-                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Created by
-                    </th>
-                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Created at
-                    </th>
-                    <th class="px-6 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Size
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-100">
-                  <template x-for="version in currentStateData.versions">
-                    <tr class="hover:bg-gray-100 version-row">
-                      <td class="px-6 py-3 max-w-0 w-full whitespace-nowrap text-sm font-medium text-gray-900">
-                        <div class="flex items-center space-x-3 lg:pl-2">
-                            <span x-text="version.id"></span>
-                            <template x-if="version.id === currentStateData.current">
-                              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                Current
-                              </span>
-                            </template>
-                            <template x-if="version.id != currentStateData.current && currentStateData.lock && currentStateData.lock.Operation === 'OperationTypeManual'">
-                              <a 
-                                href="#"
-                                class="items-center text-xs font-medium text-blue-800 hidden version-switch"
-                                @click="
-                                  loading = true
-                                  fetch(currentState, {method: 'PATCH', body: version.id})
-                                    .then(res => {
-                                      if (!res.ok) {
-                                        throw Error(res.statusText);
-                                      }
-                                      $dispatch('reload')
-                                    })
-                                    .catch(e => {
-                                      alert(e.toString())
-                                      loading = false
-                                    })
-                                "
-                              >
-                                Switch to this version
-                              </a>
-                            </template>
-                        </div>
-                      </td>
-                      <td x-text="version.created_by" class="table-cell px-6 py-3 whitespace-nowrap text-sm text-gray-500 text-right"></td>
-                      <td x-text="new Date(version.created_at).toLocaleDateString() + ' ' + new Date(version.created_at).toLocaleTimeString()" class="table-cell px-6 py-3 whitespace-nowrap text-sm text-gray-500 text-right"></td>
-                      <td x-text="version.size" class="table-cell px-6 py-3 whitespace-nowrap text-sm text-gray-500 text-right"></td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          </main>
+    
+        <div class="flex-shrink-0 w-14">
+          <!-- Force sidebar to shrink to fit close icon -->
         </div>
       </div>
+    
+      <!-- Static sidebar for desktop -->
+      <div class="hidden md:flex md:w-80 md:flex-col md:fixed md:inset-y-0">
+        <!-- Sidebar component, swap this element with another sidebar if you like -->
+        <div class="flex-1 flex flex-col min-h-0 bg-gray-800">
+          <div class="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
+            <div class="flex items-center flex-shrink-0 px-4">
+              <div class="text-white font-medium text-xl">Terraform states</div>
+            </div>
+            <nav class="mt-5 flex-1 px-2 space-y-1">
+
+              <!-- Current: "bg-gray-900 text-white", Default: "text-gray-300 hover:bg-gray-700 hover:text-white" -->
+              <template x-for="(state, index) in states" :key="index" hidden>
+                <a :href="currentState" class="text-gray-300 hover:bg-gray-700 hover:text-white group flex items-center px-2 py-2 text-sm font-sm rounded-md"
+                  :class="currentState === state && 'bg-gray-900 text-white hover:bg-gray-900 hover:text-white'"
+                  @click.prevent="loading = true; currentState = state; $dispatch('reload');"
+                >
+                  <span x-text="state" class="truncate"></span>
+                </a>
+              </template>
+
+            </nav>
+          </div>
+        </div>
+      </div>
+      <div class="md:pl-80 flex flex-col flex-1">
+        <div class="sticky top-0 z-10 md:hidden pl-1 pt-1 sm:pl-3 sm:pt-3 bg-gray-100">
+          <button @click="isSidebarOpen = !isSidebarOpen" type="button" class="-ml-0.5 -mt-0.5 h-12 w-12 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500">
+            <span class="sr-only">Open sidebar</span>
+            <!-- Heroicon name: outline/menu -->
+            <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
+        <main class="flex-1">
+          <div class="py-6">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between">
+              <h1 x-text="currentState" class="truncate text-2xl font-semibold text-gray-900">&nbsp;</h1>
+              
+              <template x-if="currentStateData.lock && currentStateData.lock.ID">
+                <button 
+                  type="button" 
+                  class="px-2 py-1.5 rounded-md text-l font-medium bg-red-100 hover:bg-red-200 text-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600"
+                  x-text="currentStateData.lock.Operation === 'OperationTypeManual' ? 'Unlock state' : 'Force unlock state'"
+                  @click="
+                    if (confirm('Really UNLOCK this state?')) {
+                      loading = true
+                      fetch(currentState, {method: 'UNLOCK'})
+                        .then(res => res.json())
+                        .then(res => {
+                          if (res.error) {
+                            throw Error(res.error);
+                          }
+                          $dispatch('reload')
+                        })
+                        .catch(e => {
+                          alert(e.toString())
+                          loading = false
+                        })
+                    }
+                  "
+                >
+                </button>
+              </template>
+
+              <template x-if="currentStateData.versions.length && currentStateData.lock && !currentStateData.lock.ID">
+                <button 
+                  type="button" 
+                  class="px-2 py-1.5 rounded-md text-l font-medium bg-blue-100 hover:bg-blue-200 text-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-50 focus:ring-blue-600"
+                  @click="
+                    if (confirm('Really LOCK this state?')) {
+                      loading = true
+
+                      fetch(currentState+'?operation=OperationTypeManual', {method: 'LOCK', body: '{}'})
+                        .then(res => res.json())
+                        .then(res => {
+                          if (res.error) {
+                            throw Error(res.error);
+                          }
+                          $dispatch('reload')
+                        })
+                        .catch(e => {
+                          alert(e.toString())
+                          loading = false
+                        })
+                    }
+                  "
+                >
+                  Lock state
+                </button>
+              </template>
+
+            </div>
+
+            <template x-if="currentStateData.lock && currentStateData.lock.ID">
+              <div class="max-w-7xl mx-auto pt-4 sm:px-6 md:px-8">
+                <div class="rounded-md bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                  <div class="flex">
+                    <div class="flex-shrink-0">
+                      <!-- Heroicon name: solid/exclamation -->
+                      <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                      </svg>
+                    </div>
+                    <div class="ml-3">
+                      <h3 class="text-sm font-medium text-yellow-800">
+                        State is locked
+                      </h3>
+                      <div class="mt-2 text-sm text-yellow-700">
+                        <ul role="list" class="list-disc pl-5 space-y-1">
+                          <li>
+                            <strong>Actor:</strong> <span x-text="currentStateData.lock.jwt?.payload[currentStateData.issuers[currentStateData.lock.jwt.issuer_id]?.ui?.actor_claim]"></span>
+                          </li>
+                          <li>
+                            <strong>Identity provider:</strong> <span x-text="currentStateData.issuers[currentStateData.lock.jwt?.issuer_id]?.ui?.name"></span>
+                          </li>
+                          <li x-show="currentStateData.issuers[currentStateData.lock.jwt?.issuer_id]?.ui?.job_url">
+                            Job: <a x-text="currentStateData.issuers[currentStateData.lock.jwt?.issuer_id]?.ui?.job_url?.mapReplace(currentStateData.lock.jwt?.payload)" :href="currentStateData.issuers[currentStateData.lock.jwt?.issuer_id]?.ui?.job_url?.mapReplace(currentStateData.lock.jwt?.payload)" target="_blank" rel="noopener noreferrer" class="hover:underline"></a> 
+                          </li>
+                          <li>
+                            <strong>Created:</strong> 
+                            <span x-text="new Date(currentStateData.lock.Created).toLocaleDateString()"></span>
+                            <span x-text="new Date(currentStateData.lock.Created).toLocaleTimeString()"></span>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+              <div class="py-4">
+
+                <template x-if="loading">
+                  <div 
+                    class="w-auto bg-gray-200 h-0.5 relative overflow-hidden indeterminate"
+                  >
+                    <div
+                      class="h-full progressbar bg-indigo-800 absolute top-0 indeterminate"
+                      role="progressbar"
+                      style="width: 0%"
+                      aria-valuenow="0"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                    >
+                      <span class="flex items-center h-full">
+                        <slot></slot>
+                      </span>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!loading">
+                  <div 
+                    class="w-auto bg-gray-200 h-0.5 relative overflow-hidden indeterminate"
+                  >
+                </template>
+
+                <div class="">
+                  <div class="align-middle inline-block min-w-full border-b border-gray-200">
+                    <table class="min-w-full">
+                      <thead>
+                        <tr class="border-gray-200">
+                          <th class="px-4 py-3 border-b border-gray-200 bg-gray-50 text-left text-xs font-medium text-gray-800 uppercase tracking-wider">
+                            Version / Job
+                          </th>
+                          <th class="px-4 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-800 uppercase tracking-wider">
+                            Actor / IDP
+                          </th>
+                          <th class="px-4 py-3 border-b border-gray-200 bg-gray-50 text-center text-xs font-medium text-gray-800 uppercase tracking-wider">
+                            TF
+                          </th>
+                          <th class="px-4 py-3 border-b border-gray-200 bg-gray-50 text-center text-xs font-medium text-gray-800 uppercase tracking-wider">
+                            Size
+                          </th>
+                          <th class="px-4 py-3 border-b border-gray-200 bg-gray-50 text-right text-xs font-medium text-gray-800 uppercase tracking-wider">
+                            Created
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody class="bg-white divide-y divide-gray-100">
+                        <template x-for="version in currentStateData.versions" :key="version.id">
+                          <tr class="hover:bg-gray-100 version-row">
+                            <td class="px-4 py-3 max-w-0 w-full whitespace-nowrap text-xs text-gray-900">
+                              <div class="flex items-center space-x-2">
+                                  <span x-text="version.id" class="truncate"></span>
+                                  <template x-if="version.id === currentStateData.current">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-green-100 text-green-800">
+                                      Current
+                                    </span>
+                                  </template>
+                                  <template x-if="version.id != currentStateData.current && currentStateData.lock && currentStateData.lock.Operation === 'OperationTypeManual'">
+                                    <a 
+                                      href="#"
+                                      class="items-center text-xs font-medium text-blue-800 hidden version-switch hover:underline"
+                                      @click="
+                                        loading = true
+                                        fetch(currentState, {method: 'PATCH', body: version.id})
+                                          .then(res => {
+                                            if (!res.ok) {
+                                              throw Error(res.statusText);
+                                            }
+                                            $dispatch('reload')
+                                          })
+                                          .catch(e => {
+                                            alert(e.toString())
+                                            loading = false
+                                          })
+                                      "
+                                    >
+                                      Switch to this version
+                                    </a>
+                                  </template>
+                              </div>
+                              <div class="flex">
+                                  <a x-text="currentStateData.issuers[version.jwt?.issuer_id]?.ui?.job_url?.mapReplace(version.jwt?.payload)" :href="currentStateData.issuers[version.jwt?.issuer_id]?.ui?.job_url?.mapReplace(version.jwt?.payload)" target="_blank" rel="noopener noreferrer" class="truncate text-xs text-gray-700 hover:underline"></a>
+                              </div>
+                            </td>
+                            <td class="table-cell px-4 py-2 whitespace-nowrap text-sm text-gray-700 text-right">
+                              <div><span x-text="version.jwt?.payload[currentStateData.issuers[version.jwt.issuer_id]?.ui?.actor_claim]"></span></div>
+                              <div><span x-text="currentStateData.issuers[version.jwt?.issuer_id]?.ui?.name" class="text-xs"></span></div>
+                            </td>
+                            <td class="table-cell px-4 py-2 whitespace-nowrap text-sm text-gray-700 text-center">
+                              <span x-text="version.terraform?.version"></span>
+                            </td>
+                            <td class="table-cell px-4 py-2 whitespace-nowrap text-sm text-gray-700 text-center">
+                              <span x-text="version.size"></span>
+                            </td>
+                            <td class="table-cell px-4 py-2 whitespace-nowrap text-sm text-gray-700 text-right">
+                              <div><span x-text="new Date(version.created_at).toLocaleTimeString()"></span></div>
+                              <div><span x-text="new Date(version.created_at).toLocaleDateString()" class="text-xs"></span></div>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
   </body>
 </html>
